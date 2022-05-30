@@ -442,10 +442,6 @@ class Model:
 
         self.encoder_right = Encoder(self.N, self.L, name="Encoder_right")
 
-        self.encoder_left_aux = Encoder(self.N, self.L, name="Encoder_left_aux")
-
-        self.encoder_right_aux = Encoder(self.N, self.L, name="Encoder_right_aux")
-
         self.TCN_left = TCN(
             self.N,
             self.L,
