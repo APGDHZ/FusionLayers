@@ -1,4 +1,4 @@
-# FusionLayers
+# Fusion Layers
 
 <p align="justify">
 In this work, we address the problem of speech enhancement in the context of binaural hearing. We propose deep learning models which are connected by "fusion layers" that perform Hadamard products between specific generated latent representations. Fusion layers are inspired by multi-task learning approaches that combine and/or share weights between models that tackle related tasks. We first present a general fusion model and show that this approach is able to fit synthetic data better than independent linear models, equalize activation variance between learning modules, and exploit input data redundancy to improve the training error. We then apply the concept of fusion layers to enhance speech in binaural listening conditions. Our results show that the proposed approach improves speech enhancement performance on unseen data with respect to the independent models. However, we observe a trade-off between speech enhancement performance and predicted speech intelligibility based on a short-time objective binaural speech intelligibility index, potentially due to distortions introduced by fully fused models.
