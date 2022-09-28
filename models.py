@@ -93,23 +93,33 @@ class _GlobalNorm(tf.keras.layers.Layer):
 
 
 class Encoder(tf.keras.layers.Layer):
-    def __init__(self, N, L, **kwargs):
+    def __init__(self, N, L, encoding, **kwargs):
         super(Encoder, self).__init__(**kwargs)
         self.N = N
         self.L = L
+        self.encoding = encoding
 
     def build(self, inputs):
-        self.encoder = tf.keras.layers.Conv1D(
+        if self.encoding == "hybrid":
+            self.encoder = tf.keras.layers.Conv1D(
+            filters=self.N+1,
+            kernel_size=2*self.L,
+            strides=self.L// 2,
+            activation="relu",
+            name="encode_conv1d"
+            )          
+        else:
+            self.encoder = tf.keras.layers.Conv1D(
             filters=self.N,
             kernel_size=self.L,
             strides=self.L // 2,
-            activation="linear",
+            activation="relu",
             name="encode_conv1d",
         )
 
     def get_config(self):
         config = super(Encoder, self).get_config().copy()
-        config.update({"layers": self.encoder, "n": self.N, "l": self.L})
+        config.update({"layers": self.encoder, "n": self.N, "l": self.L, "encoding": self.encoding})
         return config
 
     def call(self, inputs, **kwargs):
@@ -160,12 +170,12 @@ class TCN(tf.keras.layers.Layer):
     def build(self, inputs):
 
         if self.causal:
-            if self.encoding == "stft":
+            if self.encoding == "stft" or self.encoding == "hybrid":
                 self.encoded_len = (
                     int(
                         np.floor(
-                            (self.duration * self.sample_rate - 2 * self.N)
-                            / (self.N // 2)
+                            (self.duration * self.sample_rate - 2 * self.L)
+                            // (self.L//2)
                         )
                     )
                     + 1
@@ -173,6 +183,7 @@ class TCN(tf.keras.layers.Layer):
                 inp_norm = _ChannelNorm(
                     self.encoded_len, self.N + 1, name="Input_Channel_Norm"
                 )
+                
             else:
                 self.encoded_len = (int(self.duration * self.sample_rate) - self.L) // (
                     self.L // 2
@@ -303,12 +314,11 @@ class Masker(tf.keras.layers.Layer):
     def __init__(self, N, encoding, **kwargs):
         super(Masker, self).__init__(**kwargs)
         self.encoding = encoding
-        if self.encoding == "stft":
+        self.activation = tf.keras.activations.sigmoid
+        if self.encoding == "stft" or self.encoding == "hybrid":
             self.N = N + 1
-            self.activation = tf.keras.activations.sigmoid
         else:
             self.N = N
-            self.activation = tf.keras.activations.sigmoid
 
     def build(self, inputs):
         self.prelu = tf.keras.layers.PReLU(shared_axes=[1], name="decode_PReLU")
@@ -361,10 +371,10 @@ class Decoder(tf.keras.layers.Layer):
 
 
 class stftLayer(tf.keras.layers.Layer):
-    def __init__(self, blockLen, **kwargs):
+    def __init__(self, blockLen, hop, **kwargs):
         super(stftLayer, self).__init__(**kwargs)
         self.blockLen = blockLen * 2
-        self.block_shift = blockLen // 2
+        self.block_shift = hop//2
         self.wf = tf.signal.hamming_window
 
     def get_config(self):
@@ -386,10 +396,10 @@ class stftLayer(tf.keras.layers.Layer):
 
 
 class istftLayer(tf.keras.layers.Layer):
-    def __init__(self, blockLen, **kwargs):
+    def __init__(self, blockLen, hop, **kwargs):
         super(istftLayer, self).__init__(**kwargs)
         self.blockLen = blockLen * 2
-        self.block_shift = blockLen // 2
+        self.block_shift = hop//2
         self.wf = tf.signal.hamming_window
 
     def get_config(self):
@@ -417,7 +427,7 @@ class Model:
         seed(42)
         tf.random.set_seed(42)
         self.N = args.N
-        self.L = args.L
+        self.L = self.N
         self.B = args.B
         self.H = args.H
         self.S = args.S
@@ -432,15 +442,19 @@ class Model:
         self.encoding = args.encoding
         self.oa = args.output_activation
         self.sample_rate = args.sample_rate
-        self.model_name = self.top + "_model"
+        self.model_name = self.top + "_auto_encoder"
 
-        self.stft_left = stftLayer(self.N, name="STFT_left")
+        self.stft_left = stftLayer(self.N, self.L, name="STFT_left")
 
-        self.stft_right = stftLayer(self.N, name="STFT_right")
+        self.stft_right = stftLayer(self.N, self.L, name="STFT_right")
+        
+        self.encoder_left = Encoder(self.N, self.L, self.encoding, name="Encoder_left")
 
-        self.encoder_left = Encoder(self.N, self.L, name="Encoder_left")
+        self.encoder_right = Encoder(self.N, self.L, self.encoding, name="Encoder_right")
 
-        self.encoder_right = Encoder(self.N, self.L, name="Encoder_right")
+        self.encoder_left_aux = Encoder(self.N, self.L, self.encoding, name="Encoder_left_aux")
+
+        self.encoder_right_aux = Encoder(self.N, self.L, self.encoding, name="Encoder_right_aux")
 
         self.TCN_left = TCN(
             self.N,
@@ -478,9 +492,10 @@ class Model:
             name="TCN_right",
         )
 
-        self.bfusion = tf.keras.layers.Multiply(name="Back_Fusion_layer")
+        self.attention1 = tf.keras.layers.Multiply(name="Attention_layer1")
 
-        self.ffusion = tf.keras.layers.Multiply(name="Front_Fusion_layer")
+        self.attention2 = tf.keras.layers.Multiply(name="Attention_layer2")
+
 
         self.masker_left = Masker(self.N, self.encoding, name="Masker_left")
 
@@ -490,9 +505,9 @@ class Model:
 
         self.decoder_right = Decoder(self.L, self.oa, name="Decoder_right")
 
-        self.istft_left = istftLayer(self.N, name="iSTFT_left")
+        self.istft_left = istftLayer(self.N, self.L, name="iSTFT_left")
 
-        self.istft_right = istftLayer(self.N, name="iSTFT_right")
+        self.istft_right = istftLayer(self.N, self.L, name="iSTFT_right")
 
     def call(self):
 
@@ -500,7 +515,7 @@ class Model:
 
         input_right = tf.keras.Input(shape=(None,), name="Input_right")
 
-        if self.top == "Independent":
+        if self.top == "bilateral_base_sigmoid":
 
             if self.encoding == "stft":
                 [enc_inp_l, phase_l] = self.stft_left(input_left)
@@ -530,25 +545,34 @@ class Model:
 
                 out_right = self.decoder_right(masked_right)
 
-        elif self.top == "Double_fusion":
+        elif self.top == "Double_attention":
 
             if self.encoding == "stft":
                 [enc_inp_l, phase_l] = self.stft_left(input_left)
 
                 [enc_inp_r, phase_r] = self.stft_right(input_right)
+                
+            elif self.encoding == "hybrid":
+                [_, phase_l] = self.stft_left(input_left)
+
+                [_, phase_r] = self.stft_right(input_right)
+                
+                enc_inp_l = self.encoder_left(input_left)
+
+                enc_inp_r = self.encoder_right(input_right)
 
             else:
                 enc_inp_l = self.encoder_left(input_left)
 
                 enc_inp_r = self.encoder_right(input_right)
 
-            kernel1 = self.ffusion([enc_inp_l, enc_inp_r])
+            kernel1 = self.attention2([enc_inp_l, enc_inp_r])
 
             skp_l = self.TCN_left(kernel1)
 
             skp_r = self.TCN_right(kernel1)
 
-            kernel2 = self.bfusion([skp_l, skp_r])
+            kernel2 = self.attention1([skp_l, skp_r])
 
             masked_left = self.masker_left(kernel2, enc_inp_l)
 
@@ -558,13 +582,18 @@ class Model:
                 out_left = self.istft_left(masked_left, phase_l)
 
                 out_right = self.istft_right(masked_right, phase_r)
+            
+            elif self.encoding == "hybrid":
+                out_left = self.istft_left(masked_left, phase_l)
 
+                out_right = self.istft_right(masked_right, phase_r)
+            
             else:
                 out_left = self.decoder_left(masked_left)
 
                 out_right = self.decoder_right(masked_right)
 
-        elif self.top == "Front_fusion":
+        elif self.top == "Front_attention":
 
             if self.encoding == "stft":
                 [enc_inp_l, phase_l] = self.stft_left(input_left)
@@ -576,7 +605,7 @@ class Model:
 
                 enc_inp_r = self.encoder_right(input_right)
 
-            kernel1 = self.ffusion([enc_inp_l, enc_inp_r])
+            kernel1 = self.attention2([enc_inp_l, enc_inp_r])
 
             skp_l = self.TCN_left(kernel1)
 
@@ -612,7 +641,7 @@ class Model:
 
             skp_r = self.TCN_right(enc_inp_r)
 
-            kernel = self.bfusion([skp_l, skp_r])
+            kernel = self.attention1([skp_l, skp_r])
 
             masked_left = self.masker_left(kernel, enc_inp_l)
 
@@ -663,3 +692,33 @@ class Model:
                 )
 
         return model
+
+
+class SISDR(tf.keras.losses.Loss):
+    def __init__(self, **kwargs):
+        super(SISDR, self).__init__(**kwargs)
+
+    def call(self, y_true, y_pred):
+        def calc_sdr(s_hat, s):
+            def norm(x):
+                return tf.reduce_sum(x ** 2, axis=-1, keepdims=True)
+
+            s_target = tf.reduce_sum(s_hat * s, axis=-1, keepdims=True) * s / norm(s)
+            num = norm(s_target)
+            den = norm(s_hat - s_target)
+            return 10.0 * tf.experimental.numpy.log10(num / den)
+
+        sdr = calc_sdr(y_pred, y_true)
+        return tf.reduce_mean(-sdr)
+
+
+class SNR(tf.keras.losses.Loss):
+    def __init__(self, **kwargs):
+        super(SNR, self).__init__(**kwargs)
+
+    def call(self, y_true, y_pred):
+        num = tf.norm(y_true, 2, axis=-1, keepdims=True)
+        den = tf.norm(y_pred - y_true, 2, axis=-1, keepdims=True)
+
+        snr = 10.0 * tf.experimental.numpy.log10(num / den)
+        return -tf.reduce_mean(snr)
