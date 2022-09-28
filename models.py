@@ -100,21 +100,12 @@ class Encoder(tf.keras.layers.Layer):
         self.encoding = encoding
 
     def build(self, inputs):
-        if self.encoding == "hybrid":
-            self.encoder = tf.keras.layers.Conv1D(
-            filters=self.N+1,
-            kernel_size=2*self.L,
-            strides=self.L// 2,
-            activation="relu",
-            name="encode_conv1d"
-            )          
-        else:
-            self.encoder = tf.keras.layers.Conv1D(
-            filters=self.N,
-            kernel_size=self.L,
-            strides=self.L // 2,
-            activation="relu",
-            name="encode_conv1d",
+        self.encoder = tf.keras.layers.Conv1D(
+        filters=self.N,
+        kernel_size=self.L,
+        strides=self.L // 2,
+        activation="relu",
+        name="encode_conv1d",
         )
 
     def get_config(self):
@@ -170,7 +161,7 @@ class TCN(tf.keras.layers.Layer):
     def build(self, inputs):
 
         if self.causal:
-            if self.encoding == "stft" or self.encoding == "hybrid":
+            if self.encoding == "stft":
                 self.encoded_len = (
                     int(
                         np.floor(
@@ -315,7 +306,7 @@ class Masker(tf.keras.layers.Layer):
         super(Masker, self).__init__(**kwargs)
         self.encoding = encoding
         self.activation = tf.keras.activations.sigmoid
-        if self.encoding == "stft" or self.encoding == "hybrid":
+        if self.encoding == "stft":
             self.N = N + 1
         else:
             self.N = N
@@ -515,7 +506,7 @@ class Model:
 
         input_right = tf.keras.Input(shape=(None,), name="Input_right")
 
-        if self.top == "bilateral_base_sigmoid":
+        if self.top == "independent":
 
             if self.encoding == "stft":
                 [enc_inp_l, phase_l] = self.stft_left(input_left)
@@ -545,22 +536,13 @@ class Model:
 
                 out_right = self.decoder_right(masked_right)
 
-        elif self.top == "Double_attention":
+        elif self.top == "Double_fusion":
 
             if self.encoding == "stft":
                 [enc_inp_l, phase_l] = self.stft_left(input_left)
 
                 [enc_inp_r, phase_r] = self.stft_right(input_right)
                 
-            elif self.encoding == "hybrid":
-                [_, phase_l] = self.stft_left(input_left)
-
-                [_, phase_r] = self.stft_right(input_right)
-                
-                enc_inp_l = self.encoder_left(input_left)
-
-                enc_inp_r = self.encoder_right(input_right)
-
             else:
                 enc_inp_l = self.encoder_left(input_left)
 
@@ -582,18 +564,13 @@ class Model:
                 out_left = self.istft_left(masked_left, phase_l)
 
                 out_right = self.istft_right(masked_right, phase_r)
-            
-            elif self.encoding == "hybrid":
-                out_left = self.istft_left(masked_left, phase_l)
-
-                out_right = self.istft_right(masked_right, phase_r)
-            
+         
             else:
                 out_left = self.decoder_left(masked_left)
 
                 out_right = self.decoder_right(masked_right)
 
-        elif self.top == "Front_attention":
+        elif self.top == "Front_fusion":
 
             if self.encoding == "stft":
                 [enc_inp_l, phase_l] = self.stft_left(input_left)
