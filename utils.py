@@ -12,7 +12,8 @@ import argparse
 def setup():
     parser = argparse.ArgumentParser(description='Main configuration')
 
-    parser.add_argument('-top', '--topology', type=str, default="Double_fusion")
+    parser.add_argument('-top', '--topology', type=str, default="Double_fusion") 
+    #Independent, Front_fusion, Back_fusion, Double_fusion
 
     parser.add_argument('-gpu', '--GPU', type=bool, default=False)
 
@@ -23,7 +24,8 @@ def setup():
     parser.add_argument('-k', '--skip', type=bool, default=True)
     parser.add_argument('-d', '--duration', type=int, default=4)
 
-    parser.add_argument('-e', '--encoding', type=str, default="deep")
+    parser.add_argument('-e', '--encoding', type=str, default="deep") 
+    #deep, stft
 
     parser.add_argument('-N', '-N', type=int, default=512)
     parser.add_argument('-L', '-L', type=int, default=64)

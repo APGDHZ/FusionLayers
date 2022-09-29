@@ -50,8 +50,8 @@ class _ChannelNorm(tf.keras.layers.Layer):
             name="Var_CN_reshape",
         )
         return (
-            (inputs - E) / tf.math.sqrt(Var + tf.keras.backend.epsilon())
-        ) * self.gamma + self.beta
+                       (inputs - E) / tf.math.sqrt(Var + tf.keras.backend.epsilon())
+               ) * self.gamma + self.beta
 
 
 class _GlobalNorm(tf.keras.layers.Layer):
@@ -88,8 +88,8 @@ class _GlobalNorm(tf.keras.layers.Layer):
             name="Var_GN_reshape",
         )
         return (
-            (inputs - E) / tf.math.sqrt(Var + tf.keras.backend.epsilon())
-        ) * self.gamma + self.beta
+                       (inputs - E) / tf.math.sqrt(Var + tf.keras.backend.epsilon())
+               ) * self.gamma + self.beta
 
 
 class Encoder(tf.keras.layers.Layer):
@@ -101,11 +101,11 @@ class Encoder(tf.keras.layers.Layer):
 
     def build(self, inputs):
         self.encoder = tf.keras.layers.Conv1D(
-        filters=self.N,
-        kernel_size=self.L,
-        strides=self.L // 2,
-        activation="relu",
-        name="encode_conv1d",
+            filters=self.N,
+            kernel_size=self.L,
+            strides=self.L // 2,
+            activation="relu",
+            name="encode_conv1d",
         )
 
     def get_config(self):
@@ -120,22 +120,22 @@ class Encoder(tf.keras.layers.Layer):
 
 class TCN(tf.keras.layers.Layer):
     def __init__(
-        self,
-        N,
-        L,
-        B,
-        H,
-        S,
-        P,
-        X,
-        R,
-        causal,
-        skip,
-        duration,
-        sample_rate,
-        encoding,
-        GPU,
-        **kwargs
+            self,
+            N,
+            L,
+            B,
+            H,
+            S,
+            P,
+            X,
+            R,
+            causal,
+            skip,
+            duration,
+            sample_rate,
+            encoding,
+            GPU,
+            **kwargs
     ):
         super(TCN, self).__init__(**kwargs)
         self.N = N
@@ -163,21 +163,21 @@ class TCN(tf.keras.layers.Layer):
         if self.causal:
             if self.encoding == "stft":
                 self.encoded_len = (
-                    int(
-                        np.floor(
-                            (self.duration * self.sample_rate - 2 * self.L)
-                            // (self.L//2)
+                        int(
+                            np.floor(
+                                (self.duration * self.sample_rate - 2 * self.L)
+                                // (self.L // 2)
+                            )
                         )
-                    )
-                    + 1
+                        + 1
                 )
                 inp_norm = _ChannelNorm(
                     self.encoded_len, self.N + 1, name="Input_Channel_Norm"
                 )
-                
+
             else:
                 self.encoded_len = (int(self.duration * self.sample_rate) - self.L) // (
-                    self.L // 2
+                        self.L // 2
                 ) + 1
                 inp_norm = _ChannelNorm(
                     self.encoded_len, self.N, name="Input_Channel_Norm"
@@ -315,7 +315,6 @@ class Masker(tf.keras.layers.Layer):
         self.prelu = tf.keras.layers.PReLU(shared_axes=[1], name="decode_PReLU")
         self.decode = tf.keras.layers.Conv1D(self.N, 1, 1, name="1x1_conv_decoder")
 
-
     def get_config(self):
         config = super(Masker, self).get_config().copy()
         config.update(
@@ -365,7 +364,7 @@ class stftLayer(tf.keras.layers.Layer):
     def __init__(self, blockLen, hop, **kwargs):
         super(stftLayer, self).__init__(**kwargs)
         self.blockLen = blockLen * 2
-        self.block_shift = hop//2
+        self.block_shift = hop // 2
         self.wf = tf.signal.hamming_window
 
     def get_config(self):
@@ -390,7 +389,7 @@ class istftLayer(tf.keras.layers.Layer):
     def __init__(self, blockLen, hop, **kwargs):
         super(istftLayer, self).__init__(**kwargs)
         self.blockLen = blockLen * 2
-        self.block_shift = hop//2
+        self.block_shift = hop // 2
         self.wf = tf.signal.hamming_window
 
     def get_config(self):
@@ -438,7 +437,7 @@ class Model:
         self.stft_left = stftLayer(self.N, self.L, name="STFT_left")
 
         self.stft_right = stftLayer(self.N, self.L, name="STFT_right")
-        
+
         self.encoder_left = Encoder(self.N, self.L, self.encoding, name="Encoder_left")
 
         self.encoder_right = Encoder(self.N, self.L, self.encoding, name="Encoder_right")
@@ -483,10 +482,9 @@ class Model:
             name="TCN_right",
         )
 
-        self.attention1 = tf.keras.layers.Multiply(name="Attention_layer1")
+        self.fusion1 = tf.keras.layers.Multiply(name="Front_fusion")
 
-        self.attention2 = tf.keras.layers.Multiply(name="Attention_layer2")
-
+        self.fusion2 = tf.keras.layers.Multiply(name="Back_fusion")
 
         self.masker_left = Masker(self.N, self.encoding, name="Masker_left")
 
@@ -506,7 +504,7 @@ class Model:
 
         input_right = tf.keras.Input(shape=(None,), name="Input_right")
 
-        if self.top == "independent":
+        if self.top == "Independent":
 
             if self.encoding == "stft":
                 [enc_inp_l, phase_l] = self.stft_left(input_left)
@@ -542,19 +540,19 @@ class Model:
                 [enc_inp_l, phase_l] = self.stft_left(input_left)
 
                 [enc_inp_r, phase_r] = self.stft_right(input_right)
-                
+
             else:
                 enc_inp_l = self.encoder_left(input_left)
 
                 enc_inp_r = self.encoder_right(input_right)
 
-            kernel1 = self.attention2([enc_inp_l, enc_inp_r])
+            kernel1 = self.fusion1([enc_inp_l, enc_inp_r])
 
             skp_l = self.TCN_left(kernel1)
 
             skp_r = self.TCN_right(kernel1)
 
-            kernel2 = self.attention1([skp_l, skp_r])
+            kernel2 = self.fusion2([skp_l, skp_r])
 
             masked_left = self.masker_left(kernel2, enc_inp_l)
 
@@ -564,7 +562,7 @@ class Model:
                 out_left = self.istft_left(masked_left, phase_l)
 
                 out_right = self.istft_right(masked_right, phase_r)
-         
+
             else:
                 out_left = self.decoder_left(masked_left)
 
@@ -582,7 +580,7 @@ class Model:
 
                 enc_inp_r = self.encoder_right(input_right)
 
-            kernel1 = self.attention2([enc_inp_l, enc_inp_r])
+            kernel1 = self.fusion1([enc_inp_l, enc_inp_r])
 
             skp_l = self.TCN_left(kernel1)
 
@@ -602,7 +600,7 @@ class Model:
 
                 out_right = self.decoder_right(masked_right)
 
-        else:
+        elif self.top == "Back_fusion":
 
             if self.encoding == "stft":
                 [enc_inp_l, phase_l] = self.stft_left(input_left)
@@ -618,7 +616,7 @@ class Model:
 
             skp_r = self.TCN_right(enc_inp_r)
 
-            kernel = self.attention1([skp_l, skp_r])
+            kernel = self.fusion2([skp_l, skp_r])
 
             masked_left = self.masker_left(kernel, enc_inp_l)
 
@@ -634,6 +632,10 @@ class Model:
 
                 out_right = self.decoder_right(masked_right)
 
+        else:
+            print("Unknown topology name.")
+            exit()
+
         model = tf.keras.Model(
             inputs=[input_left, input_right],
             outputs=[out_left, out_right],
@@ -644,28 +646,28 @@ class Model:
             split_name = w.name.split("/")
             if len(split_name) > 1:
                 new_name = (
-                    split_name[0]
-                    + "_"
-                    + str(i)
-                    + "/"
-                    + split_name[1]
-                    + "_"
-                    + str(i)
-                    + "/"
-                    + split_name[-1]
+                        split_name[0]
+                        + "_"
+                        + str(i)
+                        + "/"
+                        + split_name[1]
+                        + "_"
+                        + str(i)
+                        + "/"
+                        + split_name[-1]
                 )
                 model.weights[i]._handle_name = new_name
             else:
                 new_name = (
-                    "new"
-                    + "_"
-                    + str(i)
-                    + "/"
-                    + "layer_name"
-                    + "_"
-                    + str(i)
-                    + "/"
-                    + split_name[-1]
+                        "new"
+                        + "_"
+                        + str(i)
+                        + "/"
+                        + "layer_name"
+                        + "_"
+                        + str(i)
+                        + "/"
+                        + split_name[-1]
                 )
 
         return model
