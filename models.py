@@ -104,7 +104,7 @@ class Encoder(tf.keras.layers.Layer):
             filters=self.N,
             kernel_size=self.L,
             strides=self.L // 2,
-            activation="relu",
+            activation="linear",
             name="encode_conv1d",
         )
 
