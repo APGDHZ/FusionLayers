@@ -104,7 +104,7 @@ class Encoder(tf.keras.layers.Layer):
             filters=self.N,
             kernel_size=self.L,
             strides=self.L // 2,
-            activation="relu",
+            activation="linear",
             name="encode_conv1d",
         )
 
@@ -305,7 +305,7 @@ class Masker(tf.keras.layers.Layer):
     def __init__(self, N, encoding, **kwargs):
         super(Masker, self).__init__(**kwargs)
         self.encoding = encoding
-        self.activation = tf.keras.activations.sigmoid
+        self.activation = tf.keras.activations.softmax
         if self.encoding == "stft":
             self.N = N + 1
         else:
@@ -417,7 +417,10 @@ class Model:
         seed(42)
         tf.random.set_seed(42)
         self.N = args.N
-        self.L = self.N
+        if args.encoding == "stft":
+            self.L = args.N
+        else:
+            self.L = args.L
         self.B = args.B
         self.H = args.H
         self.S = args.S
@@ -441,10 +444,6 @@ class Model:
         self.encoder_left = Encoder(self.N, self.L, self.encoding, name="Encoder_left")
 
         self.encoder_right = Encoder(self.N, self.L, self.encoding, name="Encoder_right")
-
-        self.encoder_left_aux = Encoder(self.N, self.L, self.encoding, name="Encoder_left_aux")
-
-        self.encoder_right_aux = Encoder(self.N, self.L, self.encoding, name="Encoder_right_aux")
 
         self.TCN_left = TCN(
             self.N,
